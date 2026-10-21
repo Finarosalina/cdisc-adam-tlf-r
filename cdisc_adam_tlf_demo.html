@@ -5,19 +5,37 @@ author: "Maria Pais Fajin"
 date: today
 format:
   html:
+    theme: cosmo
     toc: true
-    code-fold: show
+    toc-location: left
+    number-sections: true
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
     embed-resources: true
+    fig-width: 8
+    fig-height: 5
 execute:
   warning: false
   message: false
 ---
 
+::: {.callout-note title="Key results" icon=false}
+- **306** subjects in the source data; **254** received at least one dose (safety population). The other 52 were screen failures.
+- Skin and nervous system adverse events show a **dose-dependent pattern** (placebo < low dose < high dose).
+- Skin and administration-site events are consistent with the **transdermal patch** route. Results are descriptive only.
+:::
+
 ## Purpose
 
-This report reproduces the standard clinical reporting workflow used in regulatory submissions:
+This report reproduces the standard clinical reporting workflow used in regulatory submissions.
 
-**SDTM** (collected data) → **ADaM** (analysis datasets) → **TLFs** (tables, listings and figures).
+```{mermaid}
+flowchart LR
+  A["SDTM<br/>DM · EX · AE<br/><i>collected data</i>"] --> B["ADaM<br/>ADSL · ADAE<br/><i>analysis datasets</i>"]
+  B --> C["QC<br/>automated checks"]
+  C --> D["TLFs<br/>Table 14.1.1 · Table 14.3.1 · Figure 14.3.1"]
+```
 
 It uses the open-source [pharmaverse](https://pharmaverse.org) ecosystem in R instead of SAS. Source data are the simulated CDISC pilot study shipped in `pharmaversesdtm` (Xanomeline vs placebo in Alzheimer's disease). No real patient data are used.
 
@@ -29,6 +47,7 @@ library(pharmaversesdtm)
 library(dplyr)
 library(tidyr)
 library(gtsummary)
+library(ggplot2)
 
 dm <- convert_blanks_to_na(pharmaversesdtm::dm)
 ex <- convert_blanks_to_na(pharmaversesdtm::ex)
@@ -146,6 +165,46 @@ adae %>%
   arrange(AEBODSYS) %>%
   knitr::kable(col.names = c("System Organ Class", arm_levels))
 ```
+
+### Figure 14.3.1 Most Frequent Treatment-Emergent Adverse Events by System Organ Class – Safety Population
+
+System organ classes reported in at least 15% of subjects in any arm.
+
+```{r}
+#| fig-alt: "Grouped horizontal bars showing the percentage of subjects with treatment-emergent adverse events by system organ class and treatment arm"
+ae_pct <- adae %>%
+  filter(SAFFL == "Y", TRTEMFL == "Y") %>%
+  mutate(TRT01A = factor(TRT01A, levels = arm_levels)) %>%
+  distinct(USUBJID, TRT01A, AEBODSYS) %>%
+  count(AEBODSYS, TRT01A) %>%
+  left_join(n_arm, by = "TRT01A") %>%
+  mutate(pct = 100 * n / N)
+
+top_soc <- ae_pct %>%
+  group_by(AEBODSYS) %>%
+  filter(max(pct) >= 15) %>%
+  summarise(max_pct = max(pct)) %>%
+  arrange(max_pct) %>%
+  pull(AEBODSYS)
+
+ae_pct %>%
+  filter(AEBODSYS %in% top_soc) %>%
+  mutate(AEBODSYS = factor(stringr::str_to_sentence(AEBODSYS),
+                           levels = stringr::str_to_sentence(top_soc))) %>%
+  ggplot(aes(x = pct, y = AEBODSYS, fill = TRT01A)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.75) +
+  scale_fill_manual(values = c("Placebo" = "#9CA3AF",
+                               "Xanomeline Low Dose" = "#60A5FA",
+                               "Xanomeline High Dose" = "#1D4ED8")) +
+  scale_x_continuous(labels = function(x) paste0(x, "%"), expand = expansion(mult = c(0, 0.05))) +
+  labs(x = "Subjects with at least one TEAE (%)", y = NULL, fill = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top",
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor = element_blank())
+```
+
+Higher rates in both Xanomeline arms for skin, administration-site and nervous system events, with a dose-dependent pattern for skin and nervous system disorders. Descriptive summary only: no formal comparison between arms is made.
 
 ## Session information
 
